@@ -1,0 +1,38 @@
+{
+    "project_name": "",
+    "project_name_variants": [],
+    
+    "cost_structure": {
+        "total_costs_percentage": 0,
+        "costs_calculated_on": "price_without_costs",
+        "cost_lines": [
+            {"name": "מס רכישה", "percentage": 0},
+            {"name": "עו\"ד מקומי", "percentage": 0},
+            {"name": "נאמן ישראלי", "percentage": 0},
+            {"name": "רישום בטאבו", "percentage": 0},
+            {"name": "נוטריון יווני", "percentage": 0},
+            {"name": "אגרות, מספר זיהוי יווני וייפוי כוח", "percentage": 0}
+        ]
+    },
+
+    "payment_structure": {
+        "registration_fee": 2000,
+        "surcharge_percentage": 2.0,
+        "surcharge_breakdown": {
+            "clearshift_fee": 0.5,
+            "security_buffer": 1.5
+        },
+        "payments_calculated_on": "total_minus_registration",
+        "payment_lines": [
+            {"name": "מקדמה", "percentage": 0, "destination": "company_bank", "timing": ""},
+            {"name": "תשלום ראשון", "percentage": 0, "destination": "escrow", "timing": ""},
+            {"name": "תשלום שני", "percentage": 0, "destination": "escrow", "timing": ""},
+            {"name": "תשלום שלישי", "percentage": 0, "destination": "escrow", "timing": ""}
+        ]
+    },
+
+    "rounding_tolerance_eur": 1.0,
+    "area_tolerance_sqm": 0.01,
+
+    "_instructions": "Fill in project_name, all percentages, and payment timing. Save as projects/<project-name>.json. Cost line names and payment line names must match the Hebrew text in the contract template exactly."
+}

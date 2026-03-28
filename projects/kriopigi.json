@@ -1,0 +1,38 @@
+{
+    "project_name": "קריופיגי",
+    "project_name_variants": ["קריופיגי", "Kriopigi", "kriopigi", "קריופיגי חלקידיקי"],
+    
+    "cost_structure": {
+        "total_costs_percentage": 8.5,
+        "costs_calculated_on": "price_without_costs",
+        "cost_lines": [
+            {"name": "מס רכישה", "percentage": 3.09},
+            {"name": "עו\"ד מקומי", "percentage": 1.24},
+            {"name": "נאמן ישראלי", "percentage": 1.0},
+            {"name": "רישום בטאבו", "percentage": 1.0},
+            {"name": "נוטריון יווני", "percentage": 1.5},
+            {"name": "אגרות, מספר זיהוי יווני וייפוי כוח", "percentage": 0.67}
+        ]
+    },
+
+    "payment_structure": {
+        "registration_fee": 2000,
+        "surcharge_percentage": 2.0,
+        "surcharge_breakdown": {
+            "clearshift_fee": 0.5,
+            "security_buffer": 1.5
+        },
+        "payments_calculated_on": "total_minus_registration",
+        "payment_lines": [
+            {"name": "מקדמה", "percentage": 10, "destination": "company_bank", "timing": "3_business_days_from_signing"},
+            {"name": "תשלום ראשון", "percentage": 50, "destination": "escrow", "timing": "7_business_days_from_signing"},
+            {"name": "תשלום שני", "percentage": 20, "destination": "escrow", "timing": "fixed_date"},
+            {"name": "תשלום שלישי", "percentage": 20, "destination": "escrow", "timing": "fixed_date"}
+        ]
+    },
+
+    "rounding_tolerance_eur": 1.0,
+    "area_tolerance_sqm": 0.01,
+
+    "_comment": "This is the configuration for the Kriopigi Halkidiki project. Copy this file and modify for each new project."
+}

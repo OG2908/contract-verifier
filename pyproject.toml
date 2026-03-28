@@ -1,0 +1,29 @@
+[project]
+name = "contract-verifier"
+version = "0.1.0"
+description = "Verify real estate purchase contracts against reservation agreements"
+requires-python = ">=3.11"
+dependencies = [
+    "python-docx>=1.1.0",
+    "pypdf>=4.0.0",
+    "pytesseract>=0.3.10",
+    "Pillow>=10.0.0",
+    "pdf2image>=1.17.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.1.0",
+    "rich>=13.0.0",
+    "streamlit>=1.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+contract-verifier = "contract_verifier.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
