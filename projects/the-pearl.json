@@ -1,0 +1,39 @@
+{
+    "project_name": "THE PEARL",
+    "project_name_variants": ["THE PEARL", "The Pearl", "the pearl", "The Pearl - Halkidiki", "הפנינה", "פנינה", "Possidi", "Possidi Kassandra"],
+
+    "cost_structure": {
+        "total_costs_percentage": 8.5,
+        "costs_calculated_on": "price_without_costs",
+        "cost_lines": [
+            {"name": "מס רכישה", "percentage": 3.09},
+            {"name": "עו\"ד מקומי", "percentage": 1.24},
+            {"name": "נאמן ישראלי", "percentage": 1.0},
+            {"name": "רישום בטאבו", "percentage": 1.0},
+            {"name": "נוטריון יווני", "percentage": 1.5},
+            {"name": "אגרות, מספר זיהוי יווני וייפוי כוח", "percentage": 0.67}
+        ]
+    },
+
+    "payment_structure": {
+        "registration_fee": 2000,
+        "surcharge_percentage": 2.0,
+        "surcharge_breakdown": {
+            "clearshift_fee": 0.5,
+            "security_buffer": 1.5
+        },
+        "payments_calculated_on": "total_minus_registration",
+        "payment_lines": [
+            {"name": "מקדמה", "percentage": 10, "destination": "company_bank", "timing": "3_business_days_from_signing"},
+            {"name": "תשלום ראשון", "percentage": 25, "destination": "escrow", "timing": "fixed_date"},
+            {"name": "תשלום שני", "percentage": 25, "destination": "escrow", "timing": "fixed_date"},
+            {"name": "תשלום שלישי", "percentage": 20, "destination": "escrow", "timing": "after_release_of_previous"},
+            {"name": "תשלום רביעי", "percentage": 20, "destination": "escrow", "timing": "after_release_of_previous"}
+        ]
+    },
+
+    "rounding_tolerance_eur": 1.0,
+    "area_tolerance_sqm": 0.01,
+
+    "_comment": "The Pearl - Possidi Kassandra Halkidiki. 5 payment tranches (vs Kriopigi's 4). Advance 10% to company, then 25/25/20/20 to escrow."
+}
