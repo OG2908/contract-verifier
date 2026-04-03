@@ -19,9 +19,15 @@ from contract_verifier.verify import verify
 from contract_verifier.models import (
     CustomPaymentTerms,
     PaymentLine,
+    PreContractPaymentLine,
     ReservationData,
     ReservationExtractionResult,
     VerificationReport,
+)
+from contract_verifier.extract_precontract import extract_safe as extract_precontract_safe
+from contract_verifier.compute_precontract import (
+    compute_precontract_table,
+    compute_mortgage_table,
 )
 
 # Check if Google Drive packages are available
@@ -697,11 +703,233 @@ def _render_edit_project(name: str):
 
 
 # ============================================================
+# Pre-Contract Info Page
+# ============================================================
+def render_precontract_page():
+    st.title("📄 Pre-Contract Info")
+    st.markdown("Extract payment details from a signed contract and build pre-contract payment table")
+
+    with st.sidebar:
+        st.header("Pre-Contract Settings")
+        available_projects = list_projects()
+        project_options = ["—"] + available_projects
+        selected_project = st.selectbox(
+            "Project", project_options, index=0, key="pc_project"
+        )
+
+        contract_pdf = st.file_uploader(
+            "Upload signed contract PDF",
+            type=["pdf"],
+            key="pc_contract_upload",
+        )
+
+    # --- Phase 1: Extract ---
+    if contract_pdf is not None and "pc_extraction" not in st.session_state:
+        if st.button("🔍 Extract / חלץ נתונים", key="pc_extract_btn"):
+            with st.spinner("Extracting data from contract PDF (OCR may take a moment)..."):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    pdf_path = Path(tmpdir) / "contract.pdf"
+                    pdf_path.write_bytes(contract_pdf.read())
+                    result = extract_precontract_safe(str(pdf_path))
+                    st.session_state["pc_extraction"] = result
+                    st.rerun()
+
+    if "pc_extraction" not in st.session_state:
+        st.info("Upload a signed contract PDF and click Extract to begin.")
+        return
+
+    result = st.session_state["pc_extraction"]
+    d = result.data
+    failed = result.failed_fields
+
+    if result.has_warnings:
+        st.warning(
+            f"⚠️ {len(result.warnings)} field(s) could not be extracted and need manual input: "
+            + ", ".join(w.field_name for w in result.warnings)
+        )
+
+    # Reset button
+    if st.button("🔄 Reset / Start Over", key="pc_reset"):
+        for key in list(st.session_state.keys()):
+            if key.startswith("pc_"):
+                del st.session_state[key]
+        st.rerun()
+
+    # --- Phase 2: Editable commercial terms ---
+    st.subheader("Commercial Terms / פרטים מסחריים")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        _lbl = "🔴 Client name" if "client_name" in failed else "Client name"
+        pc_client = st.text_input(_lbl, value=d.client_name, key="pc_client_name")
+
+        _lbl = "🔴 Apartment" if "apartment_number" in failed else "Apartment"
+        pc_apt = st.text_input(_lbl, value=d.apartment_number, key="pc_apartment")
+
+        _lbl = "🔴 Delivery date" if "delivery_date" in failed else "Delivery date"
+        pc_delivery = st.text_input(_lbl, value=d.delivery_date, key="pc_delivery_date")
+
+        _lbl = "🔴 Late delivery (€/month)" if "late_delivery_payment" in failed else "Late delivery (€/month)"
+        pc_late = st.number_input(_lbl, value=d.late_delivery_payment, min_value=0.0, step=100.0, key="pc_late_delivery")
+
+    with col2:
+        _lbl = "🔴 Purchase price (€)" if "purchase_price" in failed else "Purchase price (€)"
+        pc_price = st.number_input(_lbl, value=d.purchase_price, min_value=0.0, step=1000.0, key="pc_purchase_price")
+
+        _lbl = "🔴 Total with costs (€)" if "total_with_costs" in failed else "Total with costs (€)"
+        pc_total = st.number_input(_lbl, value=d.total_with_costs, min_value=0.0, step=1000.0, key="pc_total_costs")
+
+        _lbl = "🔴 Gross SQM" if "gross_sqm" in failed else "Gross SQM"
+        pc_sqm = st.number_input(_lbl, value=d.gross_sqm, min_value=0.0, step=0.5, key="pc_gross_sqm")
+
+        _lbl = "🔴 Balcony SQM" if "balcony_sqm" in failed else "Balcony SQM"
+        pc_balcony = st.number_input(_lbl, value=d.balcony_sqm, min_value=0.0, step=0.5, key="pc_balcony_sqm")
+
+    bcol1, bcol2, bcol3 = st.columns(3)
+    with bcol1:
+        pc_mortgage = st.checkbox("Has mortgage / נספח משכנתא", value=d.has_mortgage, key="pc_has_mortgage")
+    with bcol2:
+        pc_storage = st.checkbox("Has storage / מחסן", value=d.has_storage, key="pc_has_storage")
+    with bcol3:
+        pc_parking = st.checkbox("Has parking / חניה", value=d.has_parking, key="pc_has_parking")
+
+    # --- Phase 3: Payment tables ---
+    if not d.payment_lines:
+        st.error("No payment lines were extracted. Cannot build payment table.")
+        return
+
+    st.subheader("Contract Payment Table / לוח תשלומים")
+
+    # Build contract payment table with mortgage checkboxes
+    mortgage_flags: list[bool] = []
+    payment_lines = d.payment_lines
+
+    header_cols = st.columns([0.5, 2.5, 2, 1, 1])
+    with header_cols[0]:
+        st.markdown("**#**")
+    with header_cols[1]:
+        st.markdown("**Payment**")
+    with header_cols[2]:
+        st.markdown("**Amount**")
+    with header_cols[3]:
+        st.markdown("**%**")
+    with header_cols[4]:
+        st.markdown("**Mortgage**")
+
+    for i, pl in enumerate(payment_lines):
+        row_cols = st.columns([0.5, 2.5, 2, 1, 1])
+        with row_cols[0]:
+            st.write(f"{i + 1}")
+        with row_cols[1]:
+            st.write(pl.name)
+        with row_cols[2]:
+            st.write(f"€{pl.amount:,.0f}")
+        with row_cols[3]:
+            st.write(f"{pl.percentage:.0f}%" if pl.percentage else "—")
+        with row_cols[4]:
+            is_mortgage = st.checkbox(
+                "M", value=False, key=f"pc_mortgage_{i}", label_visibility="collapsed"
+            )
+            mortgage_flags.append(is_mortgage)
+
+    contract_total = sum(pl.amount for pl in payment_lines)
+    st.markdown(f"**Contract total: €{contract_total:,.0f}**")
+
+    # Reservation fee controls
+    st.markdown("---")
+    deduct_reservation = st.checkbox(
+        "Deduct reservation fee / ניכוי דמי רצינות מהתשלום הראשון",
+        value=False, key="pc_deduct_reservation"
+    )
+    reservation_fee = 0.0
+    if deduct_reservation:
+        # Try to use extracted registration fee as default
+        default_fee = st.session_state.get("pc_reg_fee_default")
+        if default_fee is None:
+            # Extract from the extraction result
+            from contract_verifier.extract_precontract import _extract_registration_fee, _clean
+            from contract_verifier.extract_reservation import get_pdf_text
+            default_fee = 0.0
+            st.session_state["pc_reg_fee_default"] = default_fee
+        reservation_fee = st.number_input(
+            "Reservation fee (€)", value=0.0, min_value=0.0, step=500.0,
+            key="pc_reservation_fee"
+        )
+
+    # Compute pre-contract table
+    st.subheader("Pre-Contract Payment Table / לוח תשלומי פרה-קונטרקט")
+
+    has_mortgage_payments = any(mortgage_flags)
+
+    if has_mortgage_payments:
+        mt = compute_mortgage_table(
+            payment_lines, pc_price, mortgage_flags,
+            deduct_reservation, reservation_fee,
+        )
+        # Display non-mortgage lines
+        for i, line in enumerate(mt.non_mortgage_lines):
+            st.write(f"{i + 1}. €{line.amount:,.0f}")
+        if mt.mortgage_line:
+            st.write(f"Mortgage / משכנתא: €{mt.mortgage_line.amount:,.0f}")
+        st.markdown(f"**Total: €{mt.total:,.0f}**")
+
+        # Verify total
+        if abs(mt.total - pc_price) < 1:
+            st.success(f"✅ Total matches purchase price (€{pc_price:,.0f})")
+        else:
+            st.error(f"❌ Total (€{mt.total:,.0f}) doesn't match purchase price (€{pc_price:,.0f})")
+
+        # Build copy text
+        copy_lines = []
+        project_label = selected_project if selected_project != "—" else "Unknown"
+        copy_lines.append(f"Pre-Contract Payment Table - {project_label} - Apartment {pc_apt}")
+        copy_lines.append(f"Client: {pc_client}")
+        copy_lines.append(f"Purchase Price: €{pc_price:,.0f}")
+        copy_lines.append("")
+        for i, line in enumerate(mt.non_mortgage_lines):
+            copy_lines.append(f"{i + 1}. €{line.amount:,.0f}")
+        if mt.mortgage_line:
+            copy_lines.append(f"Mortgage: €{mt.mortgage_line.amount:,.0f}")
+        copy_lines.append(f"Total: €{mt.total:,.0f}")
+    else:
+        pc_table = compute_precontract_table(
+            payment_lines, pc_price,
+            deduct_reservation, reservation_fee,
+        )
+        for i, line in enumerate(pc_table.lines):
+            st.write(f"{i + 1}. €{line.amount:,.0f}")
+        st.markdown(f"**Total: €{pc_table.total:,.0f}**")
+
+        if abs(pc_table.total - pc_price) < 1:
+            st.success(f"✅ Total matches purchase price (€{pc_price:,.0f})")
+        else:
+            st.error(f"❌ Total (€{pc_table.total:,.0f}) doesn't match purchase price (€{pc_price:,.0f})")
+
+        # Build copy text
+        copy_lines = []
+        project_label = selected_project if selected_project != "—" else "Unknown"
+        copy_lines.append(f"Pre-Contract Payment Table - {project_label} - Apartment {pc_apt}")
+        copy_lines.append(f"Client: {pc_client}")
+        copy_lines.append(f"Purchase Price: €{pc_price:,.0f}")
+        copy_lines.append("")
+        for i, line in enumerate(pc_table.lines):
+            copy_lines.append(f"{i + 1}. €{line.amount:,.0f}")
+        copy_lines.append(f"Total: €{pc_table.total:,.0f}")
+
+    # Copy button
+    st.markdown("---")
+    st.markdown("**Copy-ready output:**")
+    st.code("\n".join(copy_lines), language=None)
+
+
+# ============================================================
 # Page Router
 # ============================================================
-page = st.sidebar.radio("Navigation", ["Verification", "Project Configuration"], index=0)
+page = st.sidebar.radio("Navigation", ["Verification", "Pre-Contract Info", "Project Configuration"], index=0)
 
 if page == "Verification":
     render_verification_page()
+elif page == "Pre-Contract Info":
+    render_precontract_page()
 else:
     render_config_page()

@@ -57,7 +57,7 @@ def extract(pdf_path: str) -> ReservationData:
 
 def extract_safe(pdf_path: str) -> ReservationExtractionResult:
     """Extract reservation data, returning partial results with warnings for failures."""
-    text = _get_text(pdf_path)
+    text = get_pdf_text(pdf_path)
     logger.debug("Raw PDF text (first 500 chars): %s", text[:500])
 
     warnings: list[ExtractionWarning] = []
@@ -145,7 +145,7 @@ def _try_extract_amount(
 
 # === Core extraction (still raises on failure — used by extract()) ===
 
-def _get_text(pdf_path: str) -> str:
+def get_pdf_text(pdf_path: str) -> str:
     """Extract text from PDF, with OCR fallback."""
     reader = PdfReader(pdf_path)
     text = ""

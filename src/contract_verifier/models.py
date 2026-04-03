@@ -87,6 +87,47 @@ class PaymentLine:
 
 
 @dataclass
+class PreContractPaymentLine:
+    """Single payment line for pre-contract table."""
+    name: str
+    amount: float
+    percentage: float = 0.0
+    timing: str = ""
+
+
+@dataclass
+class PreContractData:
+    """Extracted from a signed private agreement contract PDF."""
+    client_name: str
+    apartment_number: str
+    purchase_price: float       # התמורה — price WITHOUT deal costs
+    total_with_costs: float     # סכום הרכישה הכולל — total including costs
+    gross_sqm: float
+    balcony_sqm: float
+    delivery_date: str
+    late_delivery_payment: float
+    has_mortgage: bool
+    has_storage: bool
+    has_parking: bool
+    payment_lines: list[PreContractPaymentLine] = field(default_factory=list)
+
+
+@dataclass
+class PreContractExtractionResult:
+    """Result of pre-contract extraction — may be partial with warnings."""
+    data: PreContractData
+    warnings: list[ExtractionWarning] = field(default_factory=list)
+
+    @property
+    def has_warnings(self) -> bool:
+        return len(self.warnings) > 0
+
+    @property
+    def failed_fields(self) -> set[str]:
+        return {w.field_name for w in self.warnings}
+
+
+@dataclass
 class ContractData:
     """Extracted from the purchase contract DOCX."""
     client_name: str
