@@ -1,0 +1,39 @@
+{
+    "project_name": "פריאה",
+    "project_name_variants": ["פריאה", "Peraia", "peraia", "Midias 15", "מידיאס 15", "Midias", "פראיה"],
+
+    "cost_structure": {
+        "total_costs_percentage": 7.32,
+        "costs_calculated_on": "price_without_costs",
+        "cost_lines": [
+            {"name": "מס רכישה", "percentage": 3.09},
+            {"name": "הוצאות משפטיות ביוון", "percentage": 1.24},
+            {"name": "רישום בלשכת רישום מקרקעין", "percentage": 1.0},
+            {"name": "שכ\"ט הנוטריון", "percentage": 1.5},
+            {"name": "אגרות, מספר זיהוי יווני וייפוי כוח", "percentage": 0.365},
+            {"name": "שכ\"ט נאמנות", "percentage": 0.125}
+        ]
+    },
+
+    "payment_structure": {
+        "registration_fee": 4000,
+        "surcharge_percentage": 2.0,
+        "surcharge_breakdown": {
+            "clearshift_fee": 0.5,
+            "security_buffer": 1.5
+        },
+        "payments_calculated_on": "total_minus_registration",
+        "payment_lines": [
+            {"name": "תשלום ראשון", "percentage": 10, "destination": "company_bank", "timing": "upon_signing"},
+            {"name": "תשלום שני", "percentage": 40, "destination": "escrow", "timing": "14_days_from_signing"},
+            {"name": "תשלום שלישי", "percentage": 20, "destination": "escrow", "timing": "fixed_date"},
+            {"name": "תשלום רביעי", "percentage": 15, "destination": "escrow", "timing": "30_days_from_notice"},
+            {"name": "תשלום חמישי", "percentage": 15, "destination": "escrow", "timing": "30_days_from_notice"}
+        ]
+    },
+
+    "rounding_tolerance_eur": 1.0,
+    "area_tolerance_sqm": 0.01,
+
+    "_comment": "Peraia - Midias 15 Thessaloniki. G Capital Greece. 7.32% total costs (not 8.5% like Kriopigi/Pearl). Registration fee is €4,000 (called דמי רצינות). 5 payment tranches: 10/40/20/15/15."
+}

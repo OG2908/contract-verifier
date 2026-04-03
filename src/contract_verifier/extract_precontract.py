@@ -58,8 +58,8 @@ def _parse_amount(raw: str) -> float:
 
 def _extract_client_name(text: str) -> str:
     """Extract buyer name from contract parties section."""
-    # Format: "NAME ת.ז. XXXXXXXX"
-    match = re.search(r'([\u0590-\u05FF]+\s+[\u0590-\u05FF]+)\s+ת\.?ז\.?\s*\.?\s*(\d{7,9})', text)
+    # Format: "NAME ת.ז. XXXXXXXX" — name may be 2+ Hebrew words
+    match = re.search(r'([\u0590-\u05FF]+(?:\s+[\u0590-\u05FF]+)+)\s+ת\.?ז\.?\s*\.?\s*(\d{7,9})', text)
     if match:
         return match.group(1).strip()
 
@@ -67,7 +67,7 @@ def _extract_client_name(text: str) -> str:
     match = re.search(r'מצד\s+שני', text)
     if match:
         before = text[max(0, match.start() - 200):match.start()]
-        id_match = re.search(r'([\u0590-\u05FF]+\s+[\u0590-\u05FF]+)\s+ת\.?ז', before)
+        id_match = re.search(r'([\u0590-\u05FF]+(?:\s+[\u0590-\u05FF]+)+)\s+ת\.?ז', before)
         if id_match:
             return id_match.group(1).strip()
 
@@ -76,6 +76,11 @@ def _extract_client_name(text: str) -> str:
 
 def _extract_apartment_number(text: str) -> str:
     """Extract apartment number (e.g., 'C2')."""
+    # Table format: value before label (e.g., "A10מספר דירה")
+    match = re.search(r'([A-Za-z]\d+)\s*מספר\s+דירה', text)
+    if match:
+        return match.group(1).strip()
+
     # Look for "מספר דירה:" followed by value — OCR may drop letters
     # Try with letter prefix first
     match = re.search(r'מספר\s+דירה\s*:?\s*([A-Za-z]\d+)', text)
@@ -107,6 +112,17 @@ def _extract_purchase_price(text: str) -> float:
     if match:
         return _parse_amount(match.group(1))
 
+    # Fallback: back-calculate from total_with_costs and cost percentage
+    # Kriopigi contracts show "8.5%)" near cost breakdown but not the base price
+    pct_match = re.search(r'(\d+\.?\d*)%\s*\)', text)
+    if pct_match:
+        cost_pct = float(pct_match.group(1))
+        try:
+            total = _extract_total_with_costs(text)
+            return round(total / (1 + cost_pct / 100), 2)
+        except ExtractionError:
+            pass
+
     raise ExtractionError("Cannot extract purchase price (התמורה)")
 
 
@@ -129,6 +145,11 @@ def _extract_total_with_costs(text: str) -> float:
     if match:
         return _parse_amount(match.group(1))
 
+    # Table format: value before label (e.g., "117,127סכום הרכישה ביורו כולל")
+    match = re.search(r'([\d,]+)\s*סכו[םס]\s+הרכישה\s+(?:ביורו\s+)?כולל', text)
+    if match:
+        return _parse_amount(match.group(1))
+
     raise ExtractionError("Cannot extract total purchase price (סכום הרכישה הכולל)")
 
 
@@ -137,6 +158,14 @@ def _extract_gross_sqm(text: str) -> float:
     # OCR renders "מ"ר" as "מייר". Area may be garbled (75→5).
     # Look for pattern near "שטח דירה" or "מייר ברוטו"
     match = re.search(r'([\d,.]+)\s*מ["\u05F4]?[יר]+\s*ברוטו', text)
+    if match:
+        try:
+            return float(match.group(1).replace(',', ''))
+        except ValueError:
+            pass
+
+    # Table format: value before label (e.g., "35.42שטח דירה")
+    match = re.search(r'([\d,.]+)\s*שט[חת]\s+דירה', text)
     if match:
         try:
             return float(match.group(1).replace(',', ''))
@@ -155,6 +184,14 @@ def _extract_gross_sqm(text: str) -> float:
 
 def _extract_balcony_sqm(text: str) -> float:
     """Extract balcony area in sqm."""
+    # Table format: value before label (e.g., "6.72שטח מרפסת")
+    match = re.search(r'([\d,.]+)\s*(?:שט[חת]\s+)?מרפסת', text)
+    if match:
+        try:
+            return float(match.group(1).replace(',', ''))
+        except ValueError:
+            pass
+
     # OCR: "מרפסת : 2 מייר" (may be garbled)
     match = re.search(r'מרפסת\s*:?\s*([\d,.]+)\s*מ', text)
     if match:
@@ -200,6 +237,16 @@ def _extract_registration_fee(text: str) -> float:
 
     # Fallback: "דמי רצינות" section header followed by amount
     match = re.search(r'דמי\s+(?:ה)?רצינות\n[^\n]*בסך\s+של\s+([\d,]+)\s*(?:6|€)?', text)
+    if match:
+        return _parse_amount(match.group(1))
+
+    # Kriopigi terms: "דמי הרשמה" or "דמי הקמה"
+    match = re.search(r'דמי\s+(?:ה)?(?:רשמה|קמה)\s+בסך\s+(?:של\s+)?([\d,]+)\s*(?:6|€)?', text)
+    if match:
+        return _parse_amount(match.group(1))
+
+    # Table format: value before label (e.g., "2,000דמי הרשמה")
+    match = re.search(r'([\d,]+)\s*דמי\s+(?:ה)?(?:רשמה|קמה|רצינות)', text)
     if match:
         return _parse_amount(match.group(1))
 
@@ -255,7 +302,34 @@ def _extract_payment_lines(text: str, warnings: list[ExtractionWarning]) -> list
     if lines:
         return lines
 
-    # Strategy 2: Find "בסך של AMOUNT 6" patterns in payment section
+    # Strategy 2: Table format (Kriopigi Appendix D)
+    # Rows like: "11,743 €11,513 10% מקדמה" or "58,715 €57,563 50% תשלום ראשון"
+    # Pattern: SURCHARGE €BASE PCT% — we capture the BASE amount (after €)
+    table_pattern = re.compile(r'([\d,]+)\s*€\s*([\d,]+)\s+(\d+)%')
+    table_matches = list(table_pattern.finditer(text))
+    if table_matches:
+        payment_names = ["מקדמה", "תשלום ראשון", "תשלום שני", "תשלום שלישי",
+                         "תשלום רביעי", "תשלום חמישי"]
+        for i, m in enumerate(table_matches):
+            base_amount = _parse_amount(m.group(2))
+            pct = float(m.group(3))
+            # Find payment name in text following the match
+            after = text[m.end():m.end() + 100]
+            name = None
+            for pn in payment_names:
+                if pn in after:
+                    name = pn
+                    break
+            if name is None:
+                name = f"תשלום {i + 1}" if i > 0 else "מקדמה"
+            lines.append(PreContractPaymentLine(
+                name=name,
+                amount=base_amount,
+                percentage=pct,
+            ))
+        return lines
+
+    # Strategy 3: Find "בסך של AMOUNT 6" patterns in payment section
     section_match = re.search(r'סכו[םס]\s+הרכישה\s+(?:ה?כולל|תכולל)\s+ישול[םס]', text)
     if section_match:
         payment_text = text[section_match.end():section_match.end() + 2000]
