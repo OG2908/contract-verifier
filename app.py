@@ -727,12 +727,16 @@ def render_precontract_page():
     if contract_pdf is not None and "pc_extraction" not in st.session_state:
         if st.button("🔍 Extract / חלץ נתונים", key="pc_extract_btn"):
             with st.spinner("Extracting data from contract PDF (OCR may take a moment)..."):
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    pdf_path = Path(tmpdir) / "contract.pdf"
-                    pdf_path.write_bytes(contract_pdf.read())
-                    result = extract_precontract_safe(str(pdf_path))
-                    st.session_state["pc_extraction"] = result
-                    st.rerun()
+                try:
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        pdf_path = Path(tmpdir) / "contract.pdf"
+                        pdf_path.write_bytes(contract_pdf.read())
+                        result = extract_precontract_safe(str(pdf_path))
+                        st.session_state["pc_extraction"] = result
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Extraction failed: {e}")
+                    return
 
     if "pc_extraction" not in st.session_state:
         st.info("Upload a signed contract PDF and click Extract to begin.")

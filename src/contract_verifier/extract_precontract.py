@@ -371,7 +371,13 @@ def extract_safe(pdf_path: str) -> PreContractExtractionResult:
 
     Returns partial results with warnings for any fields that fail to extract.
     """
-    raw_text = get_pdf_text(pdf_path)
+    # Limit OCR to first 10 pages — financial data is in the early pages
+    # and full OCR on 30+ page scanned PDFs causes OOM on Streamlit Cloud.
+    try:
+        raw_text = get_pdf_text(pdf_path, max_pages=10)
+    except Exception as e:
+        logger.error("Failed to extract text from PDF: %s", e)
+        raise ExtractionError(f"Cannot read PDF: {e}") from e
     text = _clean(raw_text)
     logger.debug("Cleaned PDF text (first 1000 chars): %s", text[:1000])
 
@@ -391,7 +397,12 @@ def extract_safe(pdf_path: str) -> PreContractExtractionResult:
     has_storage = _detect_storage(text)
     has_parking = _detect_parking(text)
 
-    payment_lines = _extract_payment_lines(text, warnings)
+    try:
+        payment_lines = _extract_payment_lines(text, warnings)
+    except (ExtractionError, ValueError) as e:
+        logger.warning("Payment line extraction failed: %s", e)
+        warnings.append(ExtractionWarning("payment_lines", str(e)))
+        payment_lines = []
 
     data = PreContractData(
         client_name=client_name,

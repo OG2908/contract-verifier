@@ -145,27 +145,38 @@ def _try_extract_amount(
 
 # === Core extraction (still raises on failure — used by extract()) ===
 
-def get_pdf_text(pdf_path: str) -> str:
-    """Extract text from PDF, with OCR fallback."""
+def get_pdf_text(pdf_path: str, max_pages: int = 0) -> str:
+    """Extract text from PDF, with OCR fallback.
+
+    Args:
+        pdf_path: Path to the PDF file.
+        max_pages: Maximum number of pages to process (0 = all pages).
+    """
     reader = PdfReader(pdf_path)
+    pages = reader.pages
+    if max_pages > 0:
+        pages = pages[:max_pages]
     text = ""
-    for page in reader.pages:
+    for page in pages:
         page_text = page.extract_text() or ""
         text += page_text + "\n"
 
     if len(text.strip()) < 50:
         logger.info("Text extraction yielded < 50 chars, falling back to OCR")
-        return _ocr_extract(pdf_path)
+        return _ocr_extract(pdf_path, max_pages=max_pages)
 
     return text
 
 
-def _ocr_extract(pdf_path: str) -> str:
+def _ocr_extract(pdf_path: str, max_pages: int = 0) -> str:
     """OCR fallback for scanned PDFs."""
     import pytesseract
     from pdf2image import convert_from_path
 
-    images = convert_from_path(pdf_path, dpi=300)
+    kwargs = {"dpi": 300}
+    if max_pages > 0:
+        kwargs["last_page"] = max_pages
+    images = convert_from_path(pdf_path, **kwargs)
     text = ""
     for img in images:
         page_text = pytesseract.image_to_string(img, lang="heb")
