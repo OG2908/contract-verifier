@@ -31,6 +31,13 @@
         ]
     },
 
+    "ocr_page_ranges": {
+        "commercial_terms": [1, 3],
+        "apartment_and_payments": [8, 10],
+        "mortgage_check_last_n_pages": 5
+    },
+    "_ocr_comment": "Page ranges for OCR scanning on scanned PDFs. commercial_terms = delivery date, late fine, reservation fee. apartment_and_payments = apartment details, price, payment table, sqm, storage, parking. mortgage_check_last_n_pages = how many pages from the end to scan for נספח משכנתא.",
+
     "rounding_tolerance_eur": 1.0,
     "area_tolerance_sqm": 0.01,
 

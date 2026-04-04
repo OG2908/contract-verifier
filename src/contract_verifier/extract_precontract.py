@@ -4,14 +4,18 @@ from __future__ import annotations
 import re
 import logging
 
+from pypdf import PdfReader
+
 from .extract_reservation import get_pdf_text, ExtractionError
 from .models import (
     ExtractionWarning,
     PreContractData,
     PreContractExtractionResult,
     PreContractPaymentLine,
+    ProjectConfig,
     parse_hebrew_amount,
 )
+from .project_config import compute_ocr_pages
 
 logger = logging.getLogger(__name__)
 
@@ -366,15 +370,23 @@ def _try_extract(field_name, fn, warnings, default=None):
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def extract_safe(pdf_path: str) -> PreContractExtractionResult:
+def extract_safe(pdf_path: str, config: ProjectConfig | None = None) -> PreContractExtractionResult:
     """Extract pre-contract data from a signed Hebrew contract PDF.
+
+    Args:
+        pdf_path: Path to the PDF file.
+        config: Optional project config — used to determine which pages to OCR.
 
     Returns partial results with warnings for any fields that fail to extract.
     """
-    # Limit OCR to first 10 pages — financial data is in the early pages
-    # and full OCR on 30+ page scanned PDFs causes OOM on Streamlit Cloud.
+    ocr_pages = None
+    if config and config.ocr_page_ranges:
+        total_pages = len(PdfReader(pdf_path).pages)
+        ocr_pages = compute_ocr_pages(config.ocr_page_ranges, total_pages)
+        logger.info("OCR page list (%d of %d pages): %s", len(ocr_pages), total_pages, ocr_pages)
+
     try:
-        raw_text = get_pdf_text(pdf_path, max_pages=10)
+        raw_text = get_pdf_text(pdf_path, ocr_pages=ocr_pages)
     except Exception as e:
         logger.error("Failed to extract text from PDF: %s", e)
         raise ExtractionError(f"Cannot read PDF: {e}") from e

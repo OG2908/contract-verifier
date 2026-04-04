@@ -207,3 +207,4 @@ class ProjectConfig:
     expected_payment_lines: list[ProjectPaymentLine]
     rounding_tolerance_eur: float
     area_tolerance_sqm: float
+    ocr_page_ranges: dict | None = None

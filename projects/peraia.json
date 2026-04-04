@@ -32,6 +32,12 @@
         ]
     },
 
+    "ocr_page_ranges": {
+        "commercial_terms": [7, 7],
+        "apartment_and_payments": [14, 17],
+        "mortgage_check_last_n_pages": 5
+    },
+
     "rounding_tolerance_eur": 1.0,
     "area_tolerance_sqm": 0.01,
 

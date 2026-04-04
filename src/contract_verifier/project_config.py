@@ -88,10 +88,43 @@ def _parse_config(data: dict, source_path: Path) -> ProjectConfig:
         expected_payment_lines=payment_lines,
         rounding_tolerance_eur=data.get("rounding_tolerance_eur", 1.0),
         area_tolerance_sqm=data.get("area_tolerance_sqm", 0.01),
+        ocr_page_ranges=data.get("ocr_page_ranges"),
     )
 
     _validate(config, source_path)
     return config
+
+
+def compute_ocr_pages(ocr_page_ranges: dict, total_pages: int) -> list[int]:
+    """Compute the flat, sorted list of 1-based page numbers to OCR.
+
+    Args:
+        ocr_page_ranges: Dict with keys commercial_terms, apartment_and_payments,
+                         mortgage_check_last_n_pages.
+        total_pages: Total number of pages in the PDF.
+
+    Returns:
+        Sorted, deduplicated list of 1-based page numbers.
+    """
+    pages: set[int] = set()
+
+    ct = ocr_page_ranges.get("commercial_terms")
+    if ct:
+        pages.update(range(ct[0], ct[1] + 1))
+
+    ap = ocr_page_ranges.get("apartment_and_payments")
+    if ap:
+        pages.update(range(ap[0], ap[1] + 1))
+
+    last_n = ocr_page_ranges.get("mortgage_check_last_n_pages", 0)
+    if last_n > 0:
+        start = max(1, total_pages - last_n + 1)
+        pages.update(range(start, total_pages + 1))
+
+    # Clamp to valid page range
+    pages = {p for p in pages if 1 <= p <= total_pages}
+
+    return sorted(pages)
 
 
 def _validate(config: ProjectConfig, source_path: Path) -> None:

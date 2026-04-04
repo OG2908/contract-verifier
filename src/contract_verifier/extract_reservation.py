@@ -145,42 +145,48 @@ def _try_extract_amount(
 
 # === Core extraction (still raises on failure — used by extract()) ===
 
-def get_pdf_text(pdf_path: str, max_pages: int = 0) -> str:
+def get_pdf_text(pdf_path: str, ocr_pages: list[int] | None = None) -> str:
     """Extract text from PDF, with OCR fallback.
 
     Args:
         pdf_path: Path to the PDF file.
-        max_pages: Maximum number of pages to process (0 = all pages).
+        ocr_pages: If OCR is needed, only scan these 1-based page numbers.
+                   None means scan all pages.
     """
     reader = PdfReader(pdf_path)
-    pages = reader.pages
-    if max_pages > 0:
-        pages = pages[:max_pages]
     text = ""
-    for page in pages:
+    for page in reader.pages:
         page_text = page.extract_text() or ""
         text += page_text + "\n"
 
     if len(text.strip()) < 50:
         logger.info("Text extraction yielded < 50 chars, falling back to OCR")
-        return _ocr_extract(pdf_path, max_pages=max_pages)
+        return _ocr_extract(pdf_path, ocr_pages=ocr_pages)
 
     return text
 
 
-def _ocr_extract(pdf_path: str, max_pages: int = 0) -> str:
-    """OCR fallback for scanned PDFs."""
+def _ocr_extract(pdf_path: str, ocr_pages: list[int] | None = None) -> str:
+    """OCR fallback for scanned PDFs. Processes one page at a time at 150 DPI."""
     import pytesseract
     from pdf2image import convert_from_path
 
-    kwargs = {"dpi": 300}
-    if max_pages > 0:
-        kwargs["last_page"] = max_pages
-    images = convert_from_path(pdf_path, **kwargs)
+    reader = PdfReader(pdf_path)
+    total = len(reader.pages)
+
+    if ocr_pages is None:
+        pages_to_scan = list(range(1, total + 1))
+    else:
+        pages_to_scan = [p for p in ocr_pages if 1 <= p <= total]
+
     text = ""
-    for img in images:
-        page_text = pytesseract.image_to_string(img, lang="heb")
-        text += page_text + "\n"
+    for page_num in pages_to_scan:
+        images = convert_from_path(
+            pdf_path, dpi=150, first_page=page_num, last_page=page_num
+        )
+        for img in images:
+            page_text = pytesseract.image_to_string(img, lang="heb")
+            text += page_text + "\n"
     return text
 
 
