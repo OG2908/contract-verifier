@@ -62,8 +62,14 @@ def _parse_amount(raw: str) -> float:
 
 def _extract_client_name(text: str) -> str:
     """Extract buyer name from contract parties section."""
-    # Format: "NAME ת.ז. XXXXXXXX" — name may be 2+ Hebrew words
-    match = re.search(r'([\u0590-\u05FF]+(?:\s+[\u0590-\u05FF]+)+)\s+ת\.?ז\.?\s*\.?\s*(\d{7,9})', text)
+    # Format: "NAME ת.ז. XXXXXXXX" — name may be 2+ Hebrew words.
+    # Use [ ]+ (space only, not \s) to avoid matching across newlines.
+    match = re.search(r'([\u0590-\u05FF]+(?: +[\u0590-\u05FF]+)+) +ת\.?ז\.?\s*\.?\s*(\d{7,9})', text)
+    if match:
+        return match.group(1).strip()
+
+    # Fallback: name before ת.ז without requiring ID digits (OCR may miss them)
+    match = re.search(r'([\u0590-\u05FF]+(?: +[\u0590-\u05FF]+)+) +ת\.?ז', text)
     if match:
         return match.group(1).strip()
 
@@ -71,7 +77,7 @@ def _extract_client_name(text: str) -> str:
     match = re.search(r'מצד\s+שני', text)
     if match:
         before = text[max(0, match.start() - 200):match.start()]
-        id_match = re.search(r'([\u0590-\u05FF]+(?:\s+[\u0590-\u05FF]+)+)\s+ת\.?ז', before)
+        id_match = re.search(r'([\u0590-\u05FF]+(?: +[\u0590-\u05FF]+)+) +ת\.?ז', before)
         if id_match:
             return id_match.group(1).strip()
 
@@ -79,8 +85,8 @@ def _extract_client_name(text: str) -> str:
 
 
 def _extract_apartment_number(text: str) -> str:
-    """Extract apartment number (e.g., 'C2')."""
-    # Table format: value before label (e.g., "A10מספר דירה")
+    """Extract apartment number (e.g., 'C2', '3')."""
+    # Table format: value before label with letter prefix (e.g., "A10מספר דירה")
     match = re.search(r'([A-Za-z]\d+)\s*מספר\s+דירה', text)
     if match:
         return match.group(1).strip()
@@ -91,13 +97,19 @@ def _extract_apartment_number(text: str) -> str:
     if match:
         return match.group(1).strip()
 
-    # Just digits (OCR may drop the letter)
+    # Just digits after label (OCR may drop the letter)
     match = re.search(r'מספר\s+דירה\s*:?\s*(\d+[A-Za-z]?)', text)
     if match:
         return match.group(1).strip()
 
     # Fallback: look for apartment pattern near "דירה:"
     match = re.search(r'דירה\s*:\s*([A-Za-z]?\d+[A-Za-z]?)', text)
+    if match:
+        return match.group(1).strip()
+
+    # Last resort: bare 1-2 digit number directly before "מספר דירה" (e.g., "3מספר דירה")
+    # OCR may drop letter prefix — only match small numbers to avoid false positives
+    match = re.search(r'(\d{1,2})\s*מספר\s+דירה', text)
     if match:
         return match.group(1).strip()
 
@@ -211,19 +223,28 @@ def _extract_balcony_sqm(text: str) -> float:
 def _extract_delivery_date(text: str) -> str:
     """Extract delivery date."""
     # OCR variants: "מסירת"→"מטירת" (ט/ס), "הדירה"→"הדירת" (ה/ת)
+    # OCR may also double the yod: "מסיירה" for "מסירה"
     # Date formats: DD/MM/YYYY, DD.MM.YYYY, DD-MM-YYYY, and 2-digit year variants
     # Note: .{0,120} because the gap may contain "8.1" (digits)
     match = re.search(
-        r'מועד\s+מ[סט]יר[תה]\s+הדיר[הת].{0,120}?(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})',
+        r'מועד\s+מ[סט]יי?ר[תה]\s+הדיר[הת].{0,120}?(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})',
         text, re.DOTALL
     )
     if match:
         return match.group(1)
 
-    # Fallback: shorter label "מועד מסירה"
+    # Fallback: shorter label "מועד מסירה" / "מועד מסיירה"
     match = re.search(
-        r'מועד\s+מ[סט]יר[הת].{0,120}?(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})',
+        r'מועד\s+מ[סט]יי?ר[הת].{0,120}?(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})',
         text, re.DOTALL
+    )
+    if match:
+        return match.group(1)
+
+    # Kriopigi format: "תמסור את הדירות ב-DD.MM.YYYY"
+    match = re.search(
+        r'תמסור\s+את\s+הדירו?ת?\s+ב[- ]?(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})',
+        text,
     )
     if match:
         return match.group(1)
@@ -233,7 +254,7 @@ def _extract_delivery_date(text: str) -> str:
 
 def _extract_late_delivery_payment(text: str) -> float:
     """Extract late delivery penalty amount (EUR/month)."""
-    match = re.search(r'פיצוי[^0-9]{0,100}([\d,]+)\s*(?:6|€|אירו)', text)
+    match = re.search(r'פיצוי[^0-9]{0,100}([\d,]+)\s*(?:6|€|אירו|יורו)', text)
     if match:
         return _parse_amount(match.group(1))
 

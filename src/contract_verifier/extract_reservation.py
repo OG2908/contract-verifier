@@ -152,7 +152,27 @@ def get_pdf_text(pdf_path: str, ocr_pages: list[int] | None = None) -> str:
         pdf_path: Path to the PDF file.
         ocr_pages: If OCR is needed, only scan these 1-based page numbers.
                    None means scan all pages.
+
+    When *ocr_pages* is provided, those pages are **always** OCR'd (even if
+    native text extraction returns content).  Native text from non-OCR pages
+    is still included.  This ensures filled-in form values — which pypdf
+    often misses — are captured at the correct DPI.
     """
+    if ocr_pages:
+        # Always OCR the specified pages; use native text for the rest
+        logger.info("OCR pages configured — OCR'ing pages %s", ocr_pages)
+        reader = PdfReader(pdf_path)
+        ocr_set = set(ocr_pages)
+        native_text = ""
+        for page_idx, page in enumerate(reader.pages):
+            page_num = page_idx + 1  # 1-based
+            if page_num not in ocr_set:
+                page_text = page.extract_text() or ""
+                native_text += page_text + "\n"
+        ocr_text = _ocr_extract(pdf_path, ocr_pages=ocr_pages)
+        return native_text + ocr_text
+
+    # No OCR pages configured — native first, full OCR fallback
     reader = PdfReader(pdf_path)
     text = ""
     for page in reader.pages:
@@ -161,13 +181,13 @@ def get_pdf_text(pdf_path: str, ocr_pages: list[int] | None = None) -> str:
 
     if len(text.strip()) < 50:
         logger.info("Text extraction yielded < 50 chars, falling back to OCR")
-        return _ocr_extract(pdf_path, ocr_pages=ocr_pages)
+        return _ocr_extract(pdf_path, ocr_pages=None)
 
     return text
 
 
 def _ocr_extract(pdf_path: str, ocr_pages: list[int] | None = None) -> str:
-    """OCR fallback for scanned PDFs. Processes one page at a time at 150 DPI."""
+    """OCR fallback for scanned PDFs. Processes one page at a time at 300 DPI."""
     import pytesseract
     from pdf2image import convert_from_path
 
@@ -182,7 +202,7 @@ def _ocr_extract(pdf_path: str, ocr_pages: list[int] | None = None) -> str:
     text = ""
     for page_num in pages_to_scan:
         images = convert_from_path(
-            pdf_path, dpi=150, first_page=page_num, last_page=page_num
+            pdf_path, dpi=300, first_page=page_num, last_page=page_num
         )
         for img in images:
             page_text = pytesseract.image_to_string(img, lang="heb")

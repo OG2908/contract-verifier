@@ -37,6 +37,8 @@
         "mortgage_check_last_n_pages": 5
     },
 
+    "split_last_payment": 2,
+
     "rounding_tolerance_eur": 1.0,
     "area_tolerance_sqm": 0.01,
 

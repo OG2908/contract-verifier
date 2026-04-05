@@ -89,6 +89,7 @@ def _parse_config(data: dict, source_path: Path) -> ProjectConfig:
         rounding_tolerance_eur=data.get("rounding_tolerance_eur", 1.0),
         area_tolerance_sqm=data.get("area_tolerance_sqm", 0.01),
         ocr_page_ranges=data.get("ocr_page_ranges"),
+        split_last_payment=data.get("split_last_payment", 0),
     )
 
     _validate(config, source_path)

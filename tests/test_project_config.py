@@ -47,3 +47,15 @@ def test_payment_lines_sum():
     config = load_config("קריופיגי")
     total = sum(pl.percentage for pl in config.expected_payment_lines)
     assert abs(total - 100.0) < 0.01
+
+
+def test_split_last_payment_kriopigi():
+    """Kriopigi should have split_last_payment=2."""
+    config = load_config("קריופיגי")
+    assert config.split_last_payment == 2
+
+
+def test_split_last_payment_default():
+    """Projects without split_last_payment should default to 0."""
+    config = load_config("פריאה")
+    assert config.split_last_payment == 0

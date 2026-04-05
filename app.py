@@ -30,6 +30,37 @@ from contract_verifier.compute_precontract import (
     compute_mortgage_table,
 )
 
+
+# ============================================================
+# English payment name translation
+# ============================================================
+
+# Mapping from Hebrew payment name prefix → English equivalent
+PAYMENT_NAME_MAP = [
+    ("מקדמה", "Advance"),
+    ("תשלום ראשון", "1st Payment"),
+    ("תשלום שני", "2nd Payment"),
+    ("תשלום שלישי", "3rd Payment"),
+    ("תשלום רביעי", "4th Payment"),
+    ("תשלום חמישי", "5th Payment"),
+    ("תשלום שישי", "6th Payment"),
+    ("תשלום שביעי", "7th Payment"),
+    ("משכנתא", "Mortgage"),
+]
+
+
+def _translate_payment_name(hebrew_name: str) -> str:
+    """Translate a Hebrew payment name to English.
+
+    Uses startswith matching so split suffixes like '(1/2)' are preserved.
+    E.g., "תשלום שלישי (1/2)" → "3rd Payment (1/2)"
+    """
+    for heb, eng in PAYMENT_NAME_MAP:
+        if hebrew_name.startswith(heb):
+            suffix = hebrew_name[len(heb):]
+            return eng + suffix
+    return hebrew_name  # fallback: return as-is
+
 # Check if Google Drive packages are available
 try:
     import google.oauth2.credentials  # noqa: F401
@@ -739,6 +770,7 @@ def render_precontract_page():
                         pdf_path.write_bytes(contract_pdf.read())
                         result = extract_precontract_safe(str(pdf_path), config=pc_config)
                         st.session_state["pc_extraction"] = result
+                        st.session_state["pc_config"] = pc_config
                         st.rerun()
                 except Exception as e:
                     st.error(f"Extraction failed: {e}")
@@ -853,12 +885,17 @@ def render_precontract_page():
     # --- Phase 2: Regular Pre-Contract Payment Table (always shown) ---
     st.subheader("Pre-Contract Payment Table / לוח תשלומי פרה-קונטרקט")
 
+    # Read split config from session state
+    _pc_config = st.session_state.get("pc_config")
+    _split_last = _pc_config.split_last_payment if _pc_config else 0
+
     pc_table = compute_precontract_table(
         payment_lines, pc_price,
         deduct_reservation, reservation_fee,
+        split_last_payment=_split_last,
     )
     for i, line in enumerate(pc_table.lines):
-        st.write(f"{i + 1}. {line.name}: €{line.amount:,.0f}")
+        st.write(f"{i + 1}. {_translate_payment_name(line.name)}: €{line.amount:,.0f}")
     st.markdown(f"**Total: €{pc_table.total:,.0f}**")
 
     if abs(pc_table.total - pc_price) < 1:
@@ -874,7 +911,7 @@ def render_precontract_page():
         "",
     ]
     for i, line in enumerate(pc_table.lines):
-        regular_copy_lines.append(f"{i + 1}. {line.name}: €{line.amount:,.0f}")
+        regular_copy_lines.append(f"{i + 1}. {_translate_payment_name(line.name)}: €{line.amount:,.0f}")
     regular_copy_lines.append(f"Total: €{pc_table.total:,.0f}")
 
     st.markdown("**Copy-ready output:**")
@@ -924,13 +961,14 @@ def render_precontract_page():
             mt = compute_mortgage_table(
                 payment_lines, pc_price, mortgage_flags,
                 deduct_reservation, reservation_fee,
+                split_last_payment=_split_last,
             )
 
             st.markdown("#### Mortgage-Adjusted Payment Table")
             for i, line in enumerate(mt.non_mortgage_lines):
-                st.write(f"{i + 1}. {line.name}: €{line.amount:,.0f}")
+                st.write(f"{i + 1}. {_translate_payment_name(line.name)}: €{line.amount:,.0f}")
             if mt.mortgage_line:
-                st.write(f"משכנתא: €{mt.mortgage_line.amount:,.0f}")
+                st.write(f"Mortgage: €{mt.mortgage_line.amount:,.0f}")
             st.markdown(f"**Total: €{mt.total:,.0f}**")
 
             if abs(mt.total - pc_price) < 1:
@@ -946,9 +984,9 @@ def render_precontract_page():
                 "",
             ]
             for i, line in enumerate(mt.non_mortgage_lines):
-                mortgage_copy_lines.append(f"{i + 1}. {line.name}: €{line.amount:,.0f}")
+                mortgage_copy_lines.append(f"{i + 1}. {_translate_payment_name(line.name)}: €{line.amount:,.0f}")
             if mt.mortgage_line:
-                mortgage_copy_lines.append(f"משכנתא: €{mt.mortgage_line.amount:,.0f}")
+                mortgage_copy_lines.append(f"Mortgage: €{mt.mortgage_line.amount:,.0f}")
             mortgage_copy_lines.append(f"Total: €{mt.total:,.0f}")
 
             st.markdown("**Copy-ready output:**")

@@ -11,9 +11,9 @@ def parse_hebrew_amount(raw: str) -> float:
     Handles: "122,224", "€122,224", "122224", "122.224" (European thousands),
     "29.59" (decimal), "122,224 אירו"
     """
-    # Remove currency symbols, Hebrew "אירו", spaces, non-breaking spaces, RTL marks
+    # Remove currency symbols, Hebrew "אירו"/"יורו", spaces, non-breaking spaces, RTL marks
     cleaned = re.sub(r'[€\s\u00a0\u200f\u200e\u200b]', '', raw)
-    cleaned = re.sub(r'אירו', '', cleaned)
+    cleaned = re.sub(r'(?:אירו|יורו)', '', cleaned)
     cleaned = cleaned.strip()
 
     if not cleaned:
@@ -208,3 +208,4 @@ class ProjectConfig:
     rounding_tolerance_eur: float
     area_tolerance_sqm: float
     ocr_page_ranges: dict | None = None
+    split_last_payment: int = 0  # 0 = no split; N = split last payment into N equal parts
