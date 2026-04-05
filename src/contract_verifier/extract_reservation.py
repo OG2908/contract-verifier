@@ -169,7 +169,18 @@ def get_pdf_text(pdf_path: str, ocr_pages: list[int] | None = None) -> str:
             if page_num not in ocr_set:
                 page_text = page.extract_text() or ""
                 native_text += page_text + "\n"
-        ocr_text = _ocr_extract(pdf_path, ocr_pages=ocr_pages)
+        try:
+            ocr_text = _ocr_extract(pdf_path, ocr_pages=ocr_pages)
+        except Exception as e:
+            # OCR tools (poppler/tesseract) not installed — fall back to
+            # native text for ALL pages.  pdfplumber may still supplement.
+            logger.warning("OCR failed (%s), falling back to native text for all pages", e)
+            ocr_text = ""
+            for page_num in ocr_set:
+                idx = page_num - 1
+                if 0 <= idx < len(reader.pages):
+                    page_text = reader.pages[idx].extract_text() or ""
+                    ocr_text += page_text + "\n"
         return native_text + ocr_text
 
     # No OCR pages configured — native first, full OCR fallback
@@ -181,7 +192,11 @@ def get_pdf_text(pdf_path: str, ocr_pages: list[int] | None = None) -> str:
 
     if len(text.strip()) < 50:
         logger.info("Text extraction yielded < 50 chars, falling back to OCR")
-        return _ocr_extract(pdf_path, ocr_pages=None)
+        try:
+            return _ocr_extract(pdf_path, ocr_pages=None)
+        except Exception as e:
+            logger.warning("OCR fallback failed (%s), returning native text", e)
+            return text
 
     return text
 

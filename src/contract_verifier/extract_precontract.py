@@ -397,6 +397,167 @@ def _try_extract(field_name, fn, warnings, default=None):
 
 
 # ---------------------------------------------------------------------------
+# pdfplumber table extraction (for form-style table PDFs like Kriopigi)
+# ---------------------------------------------------------------------------
+
+def _reverse_hebrew(s: str) -> str:
+    """Reverse a string — pdfplumber returns RTL Hebrew in visual (reversed) order."""
+    return s[::-1] if s else ""
+
+
+def _parse_table_amount(raw: str) -> float:
+    """Parse an amount from a pdfplumber table cell (e.g., '€ 99,674', '2,000')."""
+    if not raw:
+        raise ValueError("Empty cell")
+    cleaned = raw.strip()
+    # Remove € and whitespace
+    cleaned = re.sub(r'[€\s]', '', cleaned)
+    # Remove Hebrew currency words (reversed in pdfplumber: "ורוי" = "יורו")
+    cleaned = re.sub(r'(?:ורוי|וריא)', '', cleaned)
+    cleaned = cleaned.replace(',', '')
+    if not cleaned:
+        raise ValueError(f"Cannot parse table amount from: {raw!r}")
+    return float(cleaned)
+
+
+def _pdfplumber_extract_tables(pdf_path: str) -> dict:
+    """Extract structured data from PDF tables using pdfplumber.
+
+    Scans all pages for tables matching Kriopigi-style Appendix A (property
+    details) and Appendix D (payment schedule) formats.
+
+    Returns a dict with any found fields — callers use these to fill gaps
+    left by OCR extraction.
+    """
+    try:
+        import pdfplumber
+    except ImportError:
+        logger.debug("pdfplumber not available, skipping table extraction")
+        return {}
+
+    result: dict = {}
+
+    try:
+        pdf = pdfplumber.open(pdf_path)
+    except Exception as e:
+        logger.warning("pdfplumber could not open PDF: %s", e)
+        return {}
+
+    for page in pdf.pages:
+        tables = page.extract_tables()
+        for table in tables:
+            if not table:
+                continue
+            _try_parse_appendix_a(table, result)
+            _try_parse_appendix_d(table, result)
+
+    pdf.close()
+    return result
+
+
+def _try_parse_appendix_a(table: list[list], result: dict) -> None:
+    """Try to parse an Appendix A (property details) table.
+
+    Table signature: rows with reversed label ':הריד רפסמ' (מספר דירה:).
+    Columns: [value, _, _, _, label]
+    """
+    # Check if this looks like Appendix A
+    flat = str(table)
+    if 'הריד רפסמ' not in flat:
+        return
+
+    for row in table:
+        if not row or len(row) < 5:
+            continue
+        value = (row[0] or "").strip()
+        label = _reverse_hebrew((row[4] or "").strip().replace('\n', ' '))
+        if not label or not value:
+            continue
+
+        if 'שטח דירה' in label:
+            # "29.01 מ"ר ברוטו" → extract number
+            m = re.search(r'[\d,.]+', value)
+            if m:
+                result.setdefault('gross_sqm', float(m.group().replace(',', '')))
+        elif 'שטח מרפסת' in label:
+            m = re.search(r'[\d,.]+', value)
+            if m:
+                result.setdefault('balcony_sqm', float(m.group().replace(',', '')))
+        elif 'סכום הרכישה' in label and 'כולל' in label:
+            try:
+                result.setdefault('total_with_costs', _parse_table_amount(value))
+            except ValueError:
+                pass
+        elif 'מספר דירה' in label:
+            result.setdefault('apartment_number', value)
+
+
+def _try_parse_appendix_d(table: list[list], result: dict) -> None:
+    """Try to parse an Appendix D (payment schedule) table.
+
+    Table signature: rows with reversed 'המדקמ' (מקדמה).
+    Payment rows: [notes, surcharge_amount, base_amount, percentage, name]
+    Header rows: ['', '', '', amount, label]
+    """
+    flat = str(table)
+    if 'המדקמ' not in flat:
+        return
+
+    payment_lines: list[PreContractPaymentLine] = []
+
+    # Reversed payment names → Hebrew
+    payment_name_map = {
+        'המדקמ': 'מקדמה',
+        'ןושאר םולשת': 'תשלום ראשון',
+        'ינש םולשת': 'תשלום שני',
+        'ישילש םולשת': 'תשלום שלישי',
+        'יעיבר םולשת': 'תשלום רביעי',
+        'ישימח םולשת': 'תשלום חמישי',
+    }
+
+    for row in table:
+        if not row or len(row) < 5:
+            continue
+
+        name_cell = (row[4] or "").strip().replace('\n', ' ')
+        col3 = (row[3] or "").strip()
+
+        # Check for header rows: total price, registration fee, remaining
+        if not row[2] and col3:
+            reversed_name = _reverse_hebrew(name_cell)
+            if 'מחיר רכישה כולל' in reversed_name or 'השיכר ריחמ' in name_cell:
+                try:
+                    result.setdefault('total_with_costs', _parse_table_amount(col3))
+                except ValueError:
+                    pass
+            elif 'דמי הרשמה' in reversed_name or 'המשרה ימד' in name_cell:
+                try:
+                    result.setdefault('registration_fee', _parse_table_amount(col3))
+                except ValueError:
+                    pass
+
+        # Check for payment rows (have base_amount and percentage)
+        for rev_name, heb_name in payment_name_map.items():
+            if rev_name in name_cell:
+                base_amount = (row[2] or "").strip()
+                pct_str = col3.replace('%', '').strip()
+                try:
+                    amount = _parse_table_amount(base_amount)
+                    pct = float(pct_str) if pct_str else 0.0
+                    payment_lines.append(PreContractPaymentLine(
+                        name=heb_name,
+                        amount=amount,
+                        percentage=pct,
+                    ))
+                except (ValueError, TypeError):
+                    pass
+                break
+
+    if payment_lines:
+        result.setdefault('payment_lines', payment_lines)
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -445,6 +606,44 @@ def extract_safe(pdf_path: str, config: ProjectConfig | None = None) -> PreContr
         logger.warning("Payment line extraction failed: %s", e)
         warnings.append(ExtractionWarning("payment_lines", str(e)))
         payment_lines = []
+
+    # --- pdfplumber supplementary extraction ---
+    # For form-style table PDFs (e.g., Kriopigi), OCR garbles table numbers.
+    # pdfplumber reads table structure directly and provides clean values.
+    table_fields = _pdfplumber_extract_tables(pdf_path)
+    if table_fields:
+        logger.info("pdfplumber extracted %d supplementary fields: %s",
+                     len(table_fields), list(table_fields.keys()))
+
+    # pdfplumber table values are more reliable than OCR for form-style PDFs.
+    # Always prefer pdfplumber for fields it extracted (not just as fallback).
+    if "apartment_number" in table_fields:
+        apartment_number = str(table_fields["apartment_number"])
+        warnings = [w for w in warnings if w.field_name != "apartment_number"]
+    if "total_with_costs" in table_fields:
+        total_with_costs = float(table_fields["total_with_costs"])
+        warnings = [w for w in warnings if w.field_name != "total_with_costs"]
+    if "gross_sqm" in table_fields:
+        gross_sqm = float(table_fields["gross_sqm"])
+        warnings = [w for w in warnings if w.field_name != "gross_sqm"]
+    if "balcony_sqm" in table_fields:
+        balcony_sqm = float(table_fields["balcony_sqm"])
+        warnings = [w for w in warnings if w.field_name != "balcony_sqm"]
+    if "registration_fee" in table_fields:
+        registration_fee = float(table_fields["registration_fee"])
+        warnings = [w for w in warnings if w.field_name != "registration_fee"]
+    if "payment_lines" in table_fields:
+        payment_lines = table_fields["payment_lines"]
+        warnings = [w for w in warnings if w.field_name != "payment_lines"]
+
+    # purchase_price: back-calculate from total_with_costs using config cost %
+    if "purchase_price" in table_fields:
+        purchase_price = float(table_fields["purchase_price"])
+        warnings = [w for w in warnings if w.field_name != "purchase_price"]
+    elif purchase_price == 0.0 and total_with_costs > 0 and config:
+        cost_pct = config.total_costs_percentage
+        purchase_price = round(total_with_costs / (1 + cost_pct / 100), 2)
+        warnings = [w for w in warnings if w.field_name != "purchase_price"]
 
     data = PreContractData(
         client_name=client_name,
