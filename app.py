@@ -803,31 +803,28 @@ def render_precontract_page():
     with bcol3:
         pc_parking = st.checkbox("Has parking / חניה", value=d.has_parking, key="pc_has_parking")
 
-    # --- Phase 3: Payment tables ---
+    # --- Phase 1: Contract Payment Table (always shown) ---
     if not d.payment_lines:
         st.error("No payment lines were extracted. Cannot build payment table.")
         return
 
+    payment_lines = d.payment_lines
+    project_label = selected_project if selected_project != "—" else "Unknown"
+
     st.subheader("Contract Payment Table / לוח תשלומים")
 
-    # Build contract payment table with mortgage checkboxes
-    mortgage_flags: list[bool] = []
-    payment_lines = d.payment_lines
-
-    header_cols = st.columns([0.5, 2.5, 2, 1, 1])
+    header_cols = st.columns([0.5, 2.5, 2, 1])
     with header_cols[0]:
         st.markdown("**#**")
     with header_cols[1]:
         st.markdown("**Payment**")
     with header_cols[2]:
-        st.markdown("**Amount**")
+        st.markdown("**Amount (€)**")
     with header_cols[3]:
         st.markdown("**%**")
-    with header_cols[4]:
-        st.markdown("**Mortgage**")
 
     for i, pl in enumerate(payment_lines):
-        row_cols = st.columns([0.5, 2.5, 2, 1, 1])
+        row_cols = st.columns([0.5, 2.5, 2, 1])
         with row_cols[0]:
             st.write(f"{i + 1}")
         with row_cols[1]:
@@ -836,11 +833,6 @@ def render_precontract_page():
             st.write(f"€{pl.amount:,.0f}")
         with row_cols[3]:
             st.write(f"{pl.percentage:.0f}%" if pl.percentage else "—")
-        with row_cols[4]:
-            is_mortgage = st.checkbox(
-                "M", value=False, key=f"pc_mortgage_{i}", label_visibility="collapsed"
-            )
-            mortgage_flags.append(is_mortgage)
 
     contract_total = sum(pl.amount for pl in payment_lines)
     st.markdown(f"**Contract total: €{contract_total:,.0f}**")
@@ -853,83 +845,114 @@ def render_precontract_page():
     )
     reservation_fee = 0.0
     if deduct_reservation:
-        # Try to use extracted registration fee as default
-        default_fee = st.session_state.get("pc_reg_fee_default")
-        if default_fee is None:
-            # Extract from the extraction result
-            from contract_verifier.extract_precontract import _extract_registration_fee, _clean
-            from contract_verifier.extract_reservation import get_pdf_text
-            default_fee = 0.0
-            st.session_state["pc_reg_fee_default"] = default_fee
         reservation_fee = st.number_input(
             "Reservation fee (€)", value=0.0, min_value=0.0, step=500.0,
             key="pc_reservation_fee"
         )
 
-    # Compute pre-contract table
+    # --- Phase 2: Regular Pre-Contract Payment Table (always shown) ---
     st.subheader("Pre-Contract Payment Table / לוח תשלומי פרה-קונטרקט")
 
-    has_mortgage_payments = any(mortgage_flags)
+    pc_table = compute_precontract_table(
+        payment_lines, pc_price,
+        deduct_reservation, reservation_fee,
+    )
+    for i, line in enumerate(pc_table.lines):
+        st.write(f"{i + 1}. {line.name}: €{line.amount:,.0f}")
+    st.markdown(f"**Total: €{pc_table.total:,.0f}**")
 
-    if has_mortgage_payments:
-        mt = compute_mortgage_table(
-            payment_lines, pc_price, mortgage_flags,
-            deduct_reservation, reservation_fee,
-        )
-        # Display non-mortgage lines
-        for i, line in enumerate(mt.non_mortgage_lines):
-            st.write(f"{i + 1}. €{line.amount:,.0f}")
-        if mt.mortgage_line:
-            st.write(f"Mortgage / משכנתא: €{mt.mortgage_line.amount:,.0f}")
-        st.markdown(f"**Total: €{mt.total:,.0f}**")
-
-        # Verify total
-        if abs(mt.total - pc_price) < 1:
-            st.success(f"✅ Total matches purchase price (€{pc_price:,.0f})")
-        else:
-            st.error(f"❌ Total (€{mt.total:,.0f}) doesn't match purchase price (€{pc_price:,.0f})")
-
-        # Build copy text
-        copy_lines = []
-        project_label = selected_project if selected_project != "—" else "Unknown"
-        copy_lines.append(f"Pre-Contract Payment Table - {project_label} - Apartment {pc_apt}")
-        copy_lines.append(f"Client: {pc_client}")
-        copy_lines.append(f"Purchase Price: €{pc_price:,.0f}")
-        copy_lines.append("")
-        for i, line in enumerate(mt.non_mortgage_lines):
-            copy_lines.append(f"{i + 1}. €{line.amount:,.0f}")
-        if mt.mortgage_line:
-            copy_lines.append(f"Mortgage: €{mt.mortgage_line.amount:,.0f}")
-        copy_lines.append(f"Total: €{mt.total:,.0f}")
+    if abs(pc_table.total - pc_price) < 1:
+        st.success(f"✅ Total matches purchase price (€{pc_price:,.0f})")
     else:
-        pc_table = compute_precontract_table(
-            payment_lines, pc_price,
-            deduct_reservation, reservation_fee,
-        )
-        for i, line in enumerate(pc_table.lines):
-            st.write(f"{i + 1}. €{line.amount:,.0f}")
-        st.markdown(f"**Total: €{pc_table.total:,.0f}**")
+        st.error(f"❌ Total (€{pc_table.total:,.0f}) doesn't match purchase price (€{pc_price:,.0f})")
 
-        if abs(pc_table.total - pc_price) < 1:
-            st.success(f"✅ Total matches purchase price (€{pc_price:,.0f})")
-        else:
-            st.error(f"❌ Total (€{pc_table.total:,.0f}) doesn't match purchase price (€{pc_price:,.0f})")
+    # Copy text for regular table
+    regular_copy_lines = [
+        f"Pre-Contract Payment Table - {project_label} - Apartment {pc_apt}",
+        f"Client: {pc_client}",
+        f"Purchase Price: €{pc_price:,.0f}",
+        "",
+    ]
+    for i, line in enumerate(pc_table.lines):
+        regular_copy_lines.append(f"{i + 1}. {line.name}: €{line.amount:,.0f}")
+    regular_copy_lines.append(f"Total: €{pc_table.total:,.0f}")
 
-        # Build copy text
-        copy_lines = []
-        project_label = selected_project if selected_project != "—" else "Unknown"
-        copy_lines.append(f"Pre-Contract Payment Table - {project_label} - Apartment {pc_apt}")
-        copy_lines.append(f"Client: {pc_client}")
-        copy_lines.append(f"Purchase Price: €{pc_price:,.0f}")
-        copy_lines.append("")
-        for i, line in enumerate(pc_table.lines):
-            copy_lines.append(f"{i + 1}. €{line.amount:,.0f}")
-        copy_lines.append(f"Total: €{pc_table.total:,.0f}")
-
-    # Copy button
-    st.markdown("---")
     st.markdown("**Copy-ready output:**")
-    st.code("\n".join(copy_lines), language=None)
+    st.code("\n".join(regular_copy_lines), language=None)
+
+    # --- Phase 3: Mortgage section (if detected or toggled) ---
+    st.markdown("---")
+    if pc_mortgage:
+        st.subheader("לוח תשלומים משכנתא")
+        st.markdown("סמן את התשלומים שישולמו מהמשכנתא ולחץ על 'חשב' לקבלת לוח תשלומים מותאם")
+
+        # Contract payments with mortgage checkboxes
+        mortgage_flags: list[bool] = []
+
+        m_header_cols = st.columns([0.5, 2.5, 2, 1, 1])
+        with m_header_cols[0]:
+            st.markdown("**#**")
+        with m_header_cols[1]:
+            st.markdown("**Payment**")
+        with m_header_cols[2]:
+            st.markdown("**Amount (€)**")
+        with m_header_cols[3]:
+            st.markdown("**%**")
+        with m_header_cols[4]:
+            st.markdown("**Mortgage**")
+
+        for i, pl in enumerate(payment_lines):
+            row_cols = st.columns([0.5, 2.5, 2, 1, 1])
+            with row_cols[0]:
+                st.write(f"{i + 1}")
+            with row_cols[1]:
+                st.write(pl.name)
+            with row_cols[2]:
+                st.write(f"€{pl.amount:,.0f}")
+            with row_cols[3]:
+                st.write(f"{pl.percentage:.0f}%" if pl.percentage else "—")
+            with row_cols[4]:
+                is_mortgage = st.checkbox(
+                    "M", value=False, key=f"pc_mortgage_{i}", label_visibility="collapsed"
+                )
+                mortgage_flags.append(is_mortgage)
+
+        if st.button("חשב / Calculate Mortgage Table", key="pc_calc_mortgage"):
+            st.session_state["pc_mortgage_calculated"] = True
+
+        if st.session_state.get("pc_mortgage_calculated") and any(mortgage_flags):
+            mt = compute_mortgage_table(
+                payment_lines, pc_price, mortgage_flags,
+                deduct_reservation, reservation_fee,
+            )
+
+            st.markdown("#### Mortgage-Adjusted Payment Table")
+            for i, line in enumerate(mt.non_mortgage_lines):
+                st.write(f"{i + 1}. {line.name}: €{line.amount:,.0f}")
+            if mt.mortgage_line:
+                st.write(f"משכנתא: €{mt.mortgage_line.amount:,.0f}")
+            st.markdown(f"**Total: €{mt.total:,.0f}**")
+
+            if abs(mt.total - pc_price) < 1:
+                st.success(f"✅ Total matches purchase price (€{pc_price:,.0f})")
+            else:
+                st.error(f"❌ Total (€{mt.total:,.0f}) doesn't match purchase price (€{pc_price:,.0f})")
+
+            # Copy text for mortgage table
+            mortgage_copy_lines = [
+                f"Mortgage Payment Table - {project_label} - Apartment {pc_apt}",
+                f"Client: {pc_client}",
+                f"Purchase Price: €{pc_price:,.0f}",
+                "",
+            ]
+            for i, line in enumerate(mt.non_mortgage_lines):
+                mortgage_copy_lines.append(f"{i + 1}. {line.name}: €{line.amount:,.0f}")
+            if mt.mortgage_line:
+                mortgage_copy_lines.append(f"משכנתא: €{mt.mortgage_line.amount:,.0f}")
+            mortgage_copy_lines.append(f"Total: €{mt.total:,.0f}")
+
+            st.markdown("**Copy-ready output:**")
+            st.code("\n".join(mortgage_copy_lines), language=None)
 
 
 # ============================================================

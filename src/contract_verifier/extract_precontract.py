@@ -107,7 +107,8 @@ def _extract_apartment_number(text: str) -> str:
 def _extract_purchase_price(text: str) -> float:
     """Extract purchase price (התמורה) — the price WITHOUT deal costs."""
     # OCR: "התמורה (כהגדרתה בהסכס) הינה בסך של 242,266 6"
-    match = re.search(r'התמורה[^0-9]{0,80}בסך\s+של\s+([\d,]+)\s*(?:6|€)?', text)
+    # OCR variant: "בטך" for "בסך"
+    match = re.search(r'התמורה[^0-9]{0,80}ב[סט]ך\s+של\s+([\d,]+)\s*(?:6|€)?', text)
     if match:
         return _parse_amount(match.group(1))
 
@@ -132,10 +133,10 @@ def _extract_purchase_price(text: str) -> float:
 
 def _extract_total_with_costs(text: str) -> float:
     """Extract total purchase price including costs (סכום הרכישה הכולל)."""
-    # OCR: "סכוס הרכישה הכולל הינו בסך של 260,000 6" or "תכולל הינו בסך של 260,000 6"
+    # OCR variants: "בסך"→"בטך" (ט/ס confusion)
     # Match specifically "הינו בסך של AMOUNT" after the total label
     match = re.search(
-        r'הרכישה\s+(?:ה?כולל|תכולל)\s+הינו\s+בסך\s+של\s+([\d,]+)\s*(?:6|€)?',
+        r'הרכישה\s+(?:ה?כולל|תכולל)\s+הינו\s+ב[סט]ך\s+של\s+([\d,]+)\s*(?:6|€)?',
         text
     )
     if match:
@@ -143,7 +144,7 @@ def _extract_total_with_costs(text: str) -> float:
 
     # Broader: "סכום הרכישה הכולל" then "בסך של AMOUNT"
     match = re.search(
-        r'סכו[םס]\s+הרכישה\s+(?:ה?כולל|תכולל)[^0-9]{0,80}בסך\s+של\s+([\d,]+)\s*(?:6|€)?',
+        r'סכו[םס]\s+הרכישה\s+(?:ה?כולל|תכולל)[^0-9]{0,80}ב[סט]ך\s+של\s+([\d,]+)\s*(?:6|€)?',
         text
     )
     if match:
@@ -209,11 +210,19 @@ def _extract_balcony_sqm(text: str) -> float:
 
 def _extract_delivery_date(text: str) -> str:
     """Extract delivery date."""
-    # OCR: "מועד מסירת הדירה (כהגדרתו בסעיף 8.1 לעיל) יהיה לא יאוחר מיוס 31/08/2026"
-    # Must match near "מסירת הדירה" to avoid picking up signing date
+    # OCR variants: "מסירת"→"מטירת" (ט/ס), "הדירה"→"הדירת" (ה/ת)
+    # Date formats: DD/MM/YYYY, DD.MM.YYYY, DD-MM-YYYY, and 2-digit year variants
     # Note: .{0,120} because the gap may contain "8.1" (digits)
     match = re.search(
-        r'מועד\s+מסירת\s+הדירה.{0,120}?(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})',
+        r'מועד\s+מ[סט]יר[תה]\s+הדיר[הת].{0,120}?(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})',
+        text, re.DOTALL
+    )
+    if match:
+        return match.group(1)
+
+    # Fallback: shorter label "מועד מסירה"
+    match = re.search(
+        r'מועד\s+מ[סט]יר[הת].{0,120}?(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})',
         text, re.DOTALL
     )
     if match:
@@ -234,18 +243,18 @@ def _extract_late_delivery_payment(text: str) -> float:
 def _extract_registration_fee(text: str) -> float:
     """Extract registration fee (דמי רצינות) amount."""
     # OCR: "דמי הרצינות בסך של 4,000 6."
-    # Match specifically "רצינות בסך של AMOUNT"
-    match = re.search(r'רצינות\s+בסך\s+של\s+([\d,]+)\s*(?:6|€)?', text)
+    # OCR variant: "בטך" for "בסך"
+    match = re.search(r'רצינות\s+ב[סט]ך\s+של\s+([\d,]+)\s*(?:6|€)?', text)
     if match:
         return _parse_amount(match.group(1))
 
     # Fallback: "דמי רצינות" section header followed by amount
-    match = re.search(r'דמי\s+(?:ה)?רצינות\n[^\n]*בסך\s+של\s+([\d,]+)\s*(?:6|€)?', text)
+    match = re.search(r'דמי\s+(?:ה)?רצינות\n[^\n]*ב[סט]ך\s+של\s+([\d,]+)\s*(?:6|€)?', text)
     if match:
         return _parse_amount(match.group(1))
 
     # Kriopigi terms: "דמי הרשמה" or "דמי הקמה"
-    match = re.search(r'דמי\s+(?:ה)?(?:רשמה|קמה)\s+בסך\s+(?:של\s+)?([\d,]+)\s*(?:6|€)?', text)
+    match = re.search(r'דמי\s+(?:ה)?(?:רשמה|קמה)\s+ב[סט]ך\s+(?:של\s+)?([\d,]+)\s*(?:6|€)?', text)
     if match:
         return _parse_amount(match.group(1))
 
@@ -286,10 +295,10 @@ def _extract_payment_lines(text: str, warnings: list[ExtractionWarning]) -> list
 
     for ordinal in ordinals:
         # Match "תשלום ORDINAL בסך של AMOUNT 6 (PERCENT%"
-        # Note: "תשלוס" is OCR variant of "תשלום"
+        # OCR variants: "תשלוס" for "תשלום", "בטך" for "בסך"
         pattern = re.compile(
             r'תשלו[םס]\s+' + re.escape(ordinal) +
-            r'\s+בסך\s+של\s+([\d,]+)\s*(?:6|€)'
+            r'\s+ב[סט]ך\s+של\s+([\d,]+)\s*(?:6|€)'
             r'[^%]{0,30}?(\d+)%',
             re.DOTALL
         )
@@ -337,7 +346,7 @@ def _extract_payment_lines(text: str, warnings: list[ExtractionWarning]) -> list
     section_match = re.search(r'סכו[םס]\s+הרכישה\s+(?:ה?כולל|תכולל)\s+ישול[םס]', text)
     if section_match:
         payment_text = text[section_match.end():section_match.end() + 2000]
-        amount_pattern = re.compile(r'בסך\s+של\s+([\d,]+)\s*(?:6|€)')
+        amount_pattern = re.compile(r'ב[סט]ך\s+של\s+([\d,]+)\s*(?:6|€)')
         idx = 1
         for m in amount_pattern.finditer(payment_text):
             amount = _parse_amount(m.group(1))
