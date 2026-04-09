@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 # Regex patterns for reservation fields
 PATTERNS = {
-    "apartment_number": r'דירה\s*(?:מספר\s*)?([A-Za-z]?\d+[A-Za-z\u0590-\u05FF]?)',
+    "apartment_number": r'דירה\s*(?:מספר\s*)?([A-Za-z]?\d+(?:-\d+)?[A-Za-z\u0590-\u05FF]?)',
     "floor": r'בקומה/מפלס\s+([^\s,]+)',
-    "area_sqm": r'שטח\s+של\s+כ?-?\s*([\d,.]+)\s*\n?\s*מטר',
+    "area_sqm": r'שטח\s+(?:\S+\s+)?של\s+כ?-?\s*([\d,.]+)\s*\n?\s*מטר',
     "price_base": r'במחיר\s+רכישה\s+של\s+([\d,]+)\s*אירו',
     "price_total": r'ובמחיר\s+כולל\s+של\s+([\d,]+)\s*\n?\s*אירו',
     "reg_fee": r'דמי\s+רצינות\s+בסך\s+([\d,]+)\s*\n?\s*אירו',

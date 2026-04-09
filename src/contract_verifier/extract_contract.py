@@ -161,7 +161,7 @@ def _extract_surcharge_percentage(table) -> float:
 
 def _extract_payment_lines(table) -> list[PaymentLine]:
     """Extract payment schedule lines from Appendix D."""
-    payment_labels = ["מקדמה", "תשלום ראשון", "תשלום שני", "תשלום שלישי"]
+    payment_labels = ["מקדמה", "תשלום ראשון", "תשלום שני", "תשלום שלישי", "תשלום רביעי", "תשלום חמישי"]
     payments = []
 
     for row in table.rows:
